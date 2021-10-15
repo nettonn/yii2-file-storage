@@ -1,0 +1,24 @@
+{
+  "name": "nettonn/yii2-file-storage",
+  "type": "library",
+  "description": "Yii2 module: file model, store info in db, generate thumbs on demand",
+  "keywords": ["Yii2","image", "file", "storage", "image", "module"],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Dmitriy Lebedev",
+      "email": "dev.nettonn@gmail.com",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": ">=7.0.0",
+    "yiisoft/yii2": "~2.0.13",
+    "yiisoft/yii2-imagine": "^2.3"
+  },
+  "autoload": {
+    "psr-4": {
+      "nettonn\\yii2filestorage\\": "src"
+    }
+  }
+}
