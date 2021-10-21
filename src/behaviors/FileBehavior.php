@@ -1,17 +1,13 @@
 <?php namespace nettonn\yii2filestorage\behaviors;
 
 
-use http\Exception\InvalidArgumentException;
 use nettonn\yii2filestorage\models\FileModel;
 use nettonn\yii2filestorage\ModuleTrait;
-use phpDocumentor\Reflection\Types\Boolean;
 use yii\base\Behavior;
 use yii\base\InvalidConfigException;
-use yii\base\InvalidParamException;
-use yii\db\ActiveQuery;
+use yii\base\ModelEvent;
+use yii\db\ActiveRecord;
 use yii\db\BaseActiveRecord;
-use yii\db\Query;
-use yii\helpers\Inflector;
 use yii\helpers\VarDumper;
 use yii\validators\Validator;
 
@@ -44,6 +40,7 @@ class FileBehavior extends Behavior
             BaseActiveRecord::EVENT_AFTER_INSERT  => 'afterSave',
             BaseActiveRecord::EVENT_AFTER_UPDATE  => 'afterSave',
             BaseActiveRecord::EVENT_BEFORE_DELETE => 'beforeDelete',
+            BaseActiveRecord::EVENT_BEFORE_VALIDATE => 'beforeValidate',
         ];
     }
 
@@ -69,9 +66,22 @@ class FileBehavior extends Behavior
             }
 
             $attributes[$attribute] = $options;
-            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute);
+
         }
         $this->attributes = $attributes;
+    }
+
+    /**
+     * @param ModelEvent $event
+     */
+    public function beforeValidate($event)
+    {
+        /* @var $owner ActiveRecord */
+        $owner = $this->owner;
+        foreach ($this->attributes as $attribute => $options) {
+//            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute);
+            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute.'_id');
+        }
     }
 
     /**
@@ -80,56 +90,56 @@ class FileBehavior extends Behavior
     public function afterSave($event)
     {
         foreach($this->attributes as $attribute => $options) {
-            if(isset($this->_values[$attribute])) {
-                $newIds = [];
+            if(!isset($this->_values[$attribute]))
+                continue;
 
-                if($options['multiple']) {
-                    foreach($this->_values[$attribute] as $data) {
-                        $newIds[] = $data['id'];
-                    }
-                    $currentIds = $this->getRelation($attribute)->select('id')->column();
-                } else {
-                    if(isset($this->_values[$attribute]['id'])) {
-                        $newIds[] = $this->_values[$attribute]['id'];
-                    }
+            $newIds = [];
 
-                    $currentIds = [$this->getRelation($attribute)->select('id')->scalar()];
+            if($options['multiple']) {
+                foreach((array) $this->_values[$attribute] as $id) {
+                    $newIds[] = $id;
                 }
+                $currentIds = $this->getRelation($attribute)->select('id')->column();
+            } else {
+                $newIds[] = $this->_values[$attribute];
 
-                if($deleteIds = array_filter(array_diff($currentIds, $newIds))) {
-                    foreach(FileModel::find()->where(['in', 'id', $deleteIds])->all() as $model) {
-                        $model->delete();
-                    }
-                }
+                $currentIds = [$this->getRelation($attribute)->select('id')->scalar()];
+            }
 
-                $extensions = $this->attributes[$attribute]['extensions'];
-
-                $sort = 1;
-                foreach($newIds as $id) {
-                    $model = FileModel::find()->where(['id' => $id])->andWhere(['in', 'ext', $extensions])->one();
-                    if($model) {
-                        $model->link_type = get_class($this->owner);
-                        $model->link_id = $this->owner->id;
-                        $model->link_attribute = $attribute;
-                        $model->sort = $sort++;
-                        if(!$model->save()) {
-                            \Yii::error('Cant save FileModel with id '.$id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
-                        }
-                    } else {
-                        \Yii::error('Cant find FileModel with id '.$id);
-                    }
-
-                }
-                unset($this->_related[$attribute]);
-                unset($this->_values[$attribute]);
-                unset($this->owner->{$attribute});
-                if($options['multiple']) {
-                    $this->owner->populateRelation($attribute, $this->getRelation($attribute)->all());
-                } else {
-                    $this->owner->populateRelation($attribute, $this->getRelation($attribute)->one());
+            if($deleteIds = array_filter(array_diff($currentIds, $newIds))) {
+                foreach(FileModel::find()->where(['in', 'id', $deleteIds])->all() as $model) {
+                    $model->delete();
                 }
             }
+
+            $extensions = $this->attributes[$attribute]['extensions'];
+
+            $sort = 1;
+            foreach($newIds as $id) {
+                $model = FileModel::find()->where(['id' => $id])->andWhere(['in', 'ext', $extensions])->one();
+                if($model) {
+                    $model->link_type = get_class($this->owner);
+                    $model->link_id = $this->owner->id;
+                    $model->link_attribute = $attribute;
+                    $model->sort = $sort++;
+                    if(!$model->save()) {
+                        \Yii::error('Cant save FileModel with id '.$id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
+                    }
+                } else {
+                    \Yii::error('Cant find FileModel with id '.$id);
+                }
+
+            }
+            unset($this->_related[$attribute]);
+            unset($this->_values[$attribute]);
+            unset($this->owner->{$attribute});
+            if($options['multiple']) {
+                $this->owner->populateRelation($attribute, $this->getRelation($attribute)->all());
+            } else {
+                $this->owner->populateRelation($attribute, $this->getRelation($attribute)->one());
+            }
         }
+
     }
 
     public function beforeDelete($event)
@@ -237,14 +247,6 @@ class FileBehavior extends Behavior
         return self::getModule()->getThumb($filename, $variant, $relative);
     }
 
-    public function canGetProperty($name, $checkVars = true)
-    {
-        if(isset($this->attributes[$name])) {
-            return true;
-        }
-        return parent::canGetProperty($name, $checkVars);
-    }
-
     protected function getRelation($attribute)
     {
         if(!isset($this->attributes[$attribute]))
@@ -272,11 +274,29 @@ class FileBehavior extends Behavior
         return $this->_related[$attribute];
     }
 
+    public function canGetProperty($name, $checkVars = true)
+    {
+        if(isset($this->attributes[$name])) {
+            return true;
+        }
+
+        $attribute = $this->filterSuffix($name, '_id');
+        if(isset($this->attributes[$attribute]))
+            return true;
+
+        return parent::canGetProperty($name, $checkVars);
+    }
+
     public function canSetProperty($name, $checkVars = true)
     {
         if(isset($this->attributes[$name])) {
             return true;
         }
+
+        $attribute = $this->filterSuffix($name, '_id');
+        if(isset($this->attributes[$attribute]))
+            return true;
+
         return parent::canSetProperty($name, $checkVars);
     }
 
@@ -284,6 +304,9 @@ class FileBehavior extends Behavior
     {
         if(isset($this->attributes[$name])) {
             $this->_values[$name] = $value;
+        } elseif(isset($this->attributes[$this->filterSuffix($name, '_id')])) {
+            $attribute = $this->filterSuffix($name, '_id');
+            $this->_values[$attribute] = $value;
         } else {
             parent::__set($name, $value);
         }
@@ -294,6 +317,14 @@ class FileBehavior extends Behavior
         $relation = $this->getRelation($name);
         if($relation) {
             return $relation->findFor($name, $this->owner);
+        }
+        $attribute = $this->filterSuffix($name, '_id');
+        $relation = $this->getRelation($attribute);
+        if($relation) {
+            if($this->attributes[$attribute]['multiple']) {
+                return $relation->select('id')->column();
+            }
+            return $relation->select('id')->scalar();
         }
         return parent::__get($name);
     }
@@ -318,5 +349,10 @@ class FileBehavior extends Behavior
                 return true;
         }
         return parent::hasMethod($name);
+    }
+
+    protected function filterSuffix($value, $suffix)
+    {
+        return substr($value, 0, strlen($value) - strlen($suffix));
     }
 }
