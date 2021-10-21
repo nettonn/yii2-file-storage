@@ -8,6 +8,7 @@ use yii\base\InvalidConfigException;
 use yii\base\ModelEvent;
 use yii\db\ActiveRecord;
 use yii\db\BaseActiveRecord;
+use yii\helpers\ArrayHelper;
 use yii\helpers\VarDumper;
 use yii\validators\Validator;
 
@@ -319,12 +320,14 @@ class FileBehavior extends Behavior
             return $relation->findFor($name, $this->owner);
         }
         $attribute = $this->filterSuffix($name, '_id');
-        $relation = $this->getRelation($attribute);
-        if($relation) {
-            if($this->attributes[$attribute]['multiple']) {
-                return $relation->select('id')->column();
+        if(isset($this->attributes[$attribute])) {
+            if ($this->attributes[$attribute]['multiple']) {
+                $attributeValue = $this->owner->{$attribute};
+                return ArrayHelper::getColumn($attributeValue, 'id');
+            } else {
+                $attributeValue = $this->owner->{$attribute};
+                return isset($attributeValue['id']) ? $attributeValue['id'] : null;
             }
-            return $relation->select('id')->scalar();
         }
         return parent::__get($name);
     }
