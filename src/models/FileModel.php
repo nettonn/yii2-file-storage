@@ -112,7 +112,7 @@ class FileModel extends ActiveRecord
                     FileHelper::createDirectory($path);
                 }
 
-                $saved = $this->file->saveAs($filename);
+                $saved = $this->file->saveAs($filename, false);
 
                 if(!$saved) {
                     $this->delete();
