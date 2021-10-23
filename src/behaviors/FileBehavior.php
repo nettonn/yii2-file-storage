@@ -41,7 +41,6 @@ class FileBehavior extends Behavior
             BaseActiveRecord::EVENT_AFTER_INSERT  => 'afterSave',
             BaseActiveRecord::EVENT_AFTER_UPDATE  => 'afterSave',
             BaseActiveRecord::EVENT_BEFORE_DELETE => 'beforeDelete',
-            BaseActiveRecord::EVENT_BEFORE_VALIDATE => 'beforeValidate',
         ];
     }
 
@@ -69,22 +68,8 @@ class FileBehavior extends Behavior
             $attributes[$attribute] = $options;
 
             $owner->validators[] = Validator::createValidator('safe', $owner, $attribute.'_id');
-
         }
         $this->attributes = $attributes;
-    }
-
-    /**
-     * @param ModelEvent $event
-     */
-    public function beforeValidate($event)
-    {
-        /* @var $owner ActiveRecord */
-        $owner = $this->owner;
-        foreach ($this->attributes as $attribute => $options) {
-//            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute);
-            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute.'_id');
-        }
     }
 
     /**
