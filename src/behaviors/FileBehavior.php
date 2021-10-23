@@ -68,6 +68,8 @@ class FileBehavior extends Behavior
 
             $attributes[$attribute] = $options;
 
+            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute.'_id');
+
         }
         $this->attributes = $attributes;
     }
