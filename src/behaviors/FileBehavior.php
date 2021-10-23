@@ -96,13 +96,18 @@ class FileBehavior extends Behavior
 
             $newIds = [];
 
-            if($options['multiple']) {
-                foreach((array) $this->_values[$attribute] as $id) {
-                    $newIds[] = $id;
-                }
-                $currentIds = $this->getRelation($attribute)->select('id')->column();
+            if(is_array($this->_values[$attribute])) {
+                $newIds = $this->_values[$attribute];
             } else {
                 $newIds[] = $this->_values[$attribute];
+            }
+
+            if($options['multiple']) {
+                $currentIds = $this->getRelation($attribute)->select('id')->column();
+            } else {
+                if(count($newIds) >1) {
+                    $newIds = array_slice($newIds, 0, 1);
+                }
 
                 $currentIds = [$this->getRelation($attribute)->select('id')->scalar()];
             }
@@ -290,10 +295,6 @@ class FileBehavior extends Behavior
 
     public function canSetProperty($name, $checkVars = true)
     {
-        if(isset($this->attributes[$name])) {
-            return true;
-        }
-
         $attribute = $this->filterSuffix($name, '_id');
         if(isset($this->attributes[$attribute]))
             return true;
@@ -303,9 +304,7 @@ class FileBehavior extends Behavior
 
     public function __set($name, $value)
     {
-        if(isset($this->attributes[$name])) {
-            $this->_values[$name] = $value;
-        } elseif(isset($this->attributes[$this->filterSuffix($name, '_id')])) {
+        if(isset($this->attributes[$this->filterSuffix($name, '_id')])) {
             $attribute = $this->filterSuffix($name, '_id');
             $this->_values[$attribute] = $value;
         } else {
