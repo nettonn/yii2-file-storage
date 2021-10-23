@@ -2,16 +2,26 @@
 
 use Yii;
 use nettonn\yii2filestorage\models\FileModel;
-use yii\base\InvalidParamException;
 use yii\helpers\VarDumper;
 use yii\rest\Controller;
 use yii\web\BadRequestHttpException;
-use yii\web\Response;
 use yii\web\ServerErrorHttpException;
 use yii\web\UploadedFile;
 
 class FileController extends Controller
 {
+    public function actionIndex()
+    {
+        $ids = \Yii::$app->request->get('ids');
+
+        if(!$ids) {
+            return [];
+        }
+        $query = FileModel::find()->where(['in', 'id', $ids])->orderBy('sort ASC');
+
+        return $query->all();
+    }
+
     public function actionCreate()
     {
         $model = new FileModel();
@@ -30,14 +40,13 @@ class FileController extends Controller
             throw new ServerErrorHttpException('Error saving model');
         }
 
-//        Yii::$app->response->format = Response::FORMAT_RAW;
-//        Yii::$app->response->headers->add('Content-Type', 'text/plain');
         return $model;
     }
 
     public function verbs()
     {
         return [
+            'index'  => ['GET'],
             'create'  => ['POST'],
         ];
     }
