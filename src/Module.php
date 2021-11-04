@@ -18,6 +18,8 @@ class Module extends \yii\base\Module
 
     public $fileModelTableName = '{{%file_model}}';
 
+    protected $_webroot = '@webroot';
+
     /**
      * @var string public setter getter
      */
@@ -52,6 +54,12 @@ class Module extends \yii\base\Module
      * @var string
      */
     protected $watermark;
+
+    public function init()
+    {
+        $this->setAliases(['@nettonn/yii2filestorage' => __DIR__]);
+        parent::init();
+    }
 
     public function generateImage($filename, $saveFilename, $toWidth, $toHeight, $adaptive = false, $quality = 80, $watermark = false)
     {
@@ -95,6 +103,21 @@ class Module extends \yii\base\Module
         $image->save($saveFilename, ['jpeg_quality' => $quality]);
     }
 
+    public function setWebroot($path)
+    {
+        $this->_webroot = $path;
+        $this->_webrootCached = null;
+    }
+
+    private $_webrootCached = null;
+
+    public function getWebroot()
+    {
+        if(null === $this->_webrootCached)
+            $this->_webrootCached = rtrim(Yii::getAlias($this->_webroot), '/');
+        return $this->_webrootCached;
+    }
+
     public function setPrivateStoragePath($path)
     {
         $this->_privateStoragePath = $path;
@@ -106,7 +129,7 @@ class Module extends \yii\base\Module
     public function getPrivateStoragePath()
     {
         if(null === $this->_privateStoragePathCached)
-            $this->_privateStoragePathCached = Yii::getAlias($this->_privateStoragePath);
+            $this->_privateStoragePathCached = rtrim(Yii::getAlias($this->_privateStoragePath), '/');
         return $this->_privateStoragePathCached;
     }
 
@@ -121,7 +144,7 @@ class Module extends \yii\base\Module
     public function getPublicStoragePath()
     {
         if(null === $this->_publicStoragePathCached)
-            $this->_publicStoragePathCached = Yii::getAlias($this->_publicStoragePath);
+            $this->_publicStoragePathCached = rtrim(Yii::getAlias($this->_publicStoragePath), '/');
         return $this->_publicStoragePathCached;
     }
 
@@ -182,7 +205,7 @@ class Module extends \yii\base\Module
 
         $newFilename = $this->getPublicFilename($filename, $variant);
         if($relative) {
-            return str_replace(Yii::getAlias('@webroot'), '', $newFilename);
+            return str_replace($this->getWebroot(), '', $newFilename);
         }
 
         return $newFilename;
@@ -235,7 +258,7 @@ class Module extends \yii\base\Module
         if($hash !== $this->generateHash($basename, $variant))
             return false;
 
-        $newFilename = Yii::getAlias('@webroot').$url;
+        $newFilename = $this->getWebroot().$url;
         $fromPath = $this->getPublicToPrivatePath($newFilename);
         $fromPath = pathinfo($fromPath, PATHINFO_DIRNAME);
 
@@ -267,7 +290,7 @@ class Module extends \yii\base\Module
 
         $basename = basename($pathPart.'.'.$ext);
 
-        $newFilename = Yii::getAlias('@webroot').$url;
+        $newFilename = $this->getWebroot().$url;
         $fromPath = $this->getPublicToPrivatePath($newFilename);
         $fromPath = pathinfo($fromPath, PATHINFO_DIRNAME);
 
