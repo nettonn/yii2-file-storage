@@ -25,12 +25,11 @@ class FileBehavior extends Behavior
     ];
 
     /**
-     * yii\behaviors\TimestampBehavior touch method
+     * default [$this->owner, 'touch', 'updated_at']
+     * like yii\behaviors\TimestampBehavior touch method
      * @var string
      */
-    public $touchMethod = 'touch';
-
-    public $touchAttribute = 'updated_at';
+    public $touchCallback;
 
     protected $_related = [];
 
@@ -62,6 +61,9 @@ class FileBehavior extends Behavior
         if(is_array($this->owner->getPrimaryKey())) {
             throw new InvalidConfigException('Composite primary keys not allowed');
         }
+
+        if(!$this->touchCallback)
+            $this->touchCallback = [$this->owner, 'touch', 'updated_at'];
 
         $attributes = [];
         foreach ($this->attributes as $attribute => $options) {
@@ -146,8 +148,8 @@ class FileBehavior extends Behavior
             }
         }
 
-        if($needTouch && $this->owner->hasMethod($this->touchMethod)) {
-            $this->owner->{$this->touchMethod}($this->touchAttribute);
+        if($needTouch && is_callable($this->touchCallback)) {
+            call_user_func($this->touchCallback);
         }
 
     }
