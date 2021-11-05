@@ -3,7 +3,7 @@
 use Imagick;
 use Imagine\Image\ManipulatorInterface;
 use Imagine\Image\Point;
-use yii\helpers\Url;
+use nettonn\yii2filestorage\models\FileModel;
 use yii\imagine\Image;
 use Yii;
 use yii\base\InvalidParamException;
@@ -17,6 +17,8 @@ class Module extends \yii\base\Module
     public $originalImageMaxHeight = 1920;
 
     public $fileModelTableName = '{{%file_model}}';
+
+    public $oldTime = 3600;
 
     protected $_webroot = '@webroot';
 
@@ -308,5 +310,19 @@ class Module extends \yii\base\Module
 
         return $newFilename;
 
+    }
+
+    public function findOldFileModelsQuery()
+    {
+        return FileModel::find()
+            ->andWhere(['or', ['link_type' => null], ['link_id' => null], ['link_attribute' => null]])
+            ->andWhere(['<', 'updated_at', time()-$this->oldTime]);
+    }
+
+    public function deleteOldFileModels()
+    {
+        foreach($this->findOldFileModelsQuery()->each() as $model) {
+            $model->delete();
+        }
     }
 }

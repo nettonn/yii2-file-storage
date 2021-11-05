@@ -5,8 +5,6 @@ use nettonn\yii2filestorage\models\FileModel;
 use nettonn\yii2filestorage\ModuleTrait;
 use yii\base\Behavior;
 use yii\base\InvalidConfigException;
-use yii\base\ModelEvent;
-use yii\db\ActiveRecord;
 use yii\db\BaseActiveRecord;
 use yii\helpers\ArrayHelper;
 use yii\helpers\VarDumper;
@@ -30,6 +28,8 @@ class FileBehavior extends Behavior
      * @var string
      */
     public $touchCallback;
+
+    public $deleteOldAfterSave = true;
 
     protected $_related = [];
 
@@ -150,6 +150,11 @@ class FileBehavior extends Behavior
 
         if($needTouch && is_callable($this->touchCallback)) {
             call_user_func($this->touchCallback);
+        }
+
+        if($this->deleteOldAfterSave) {
+            $module = self::getModule();
+            $module->deleteOldFileModels();
         }
 
     }
