@@ -24,6 +24,14 @@ class FileBehavior extends Behavior
         ]
     ];
 
+    /**
+     * yii\behaviors\TimestampBehavior touch method
+     * @var string
+     */
+    public $touchMethod = 'touch';
+
+    public $touchAttribute = 'updated_at';
+
     protected $_related = [];
 
     protected $_values = [];
@@ -77,6 +85,7 @@ class FileBehavior extends Behavior
      */
     public function afterSave($event)
     {
+        $needTouch = false;
         foreach($this->attributes as $attribute => $options) {
             if(!isset($this->_values[$attribute]))
                 continue;
@@ -97,6 +106,10 @@ class FileBehavior extends Behavior
                 }
 
                 $currentIds = [$this->getRelation($attribute)->select('id')->scalar()];
+            }
+
+            if($currentIds !== $newIds) {
+                $needTouch = true;
             }
 
             if($deleteIds = array_filter(array_diff($currentIds, $newIds))) {
@@ -131,6 +144,10 @@ class FileBehavior extends Behavior
             } else {
                 $this->owner->populateRelation($attribute, $this->getRelation($attribute)->one());
             }
+        }
+
+        if($needTouch && $this->owner->hasMethod($this->touchMethod)) {
+            $this->owner->{$this->touchMethod}($this->touchAttribute);
         }
 
     }
