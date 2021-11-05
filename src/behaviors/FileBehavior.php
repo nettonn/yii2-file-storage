@@ -23,7 +23,12 @@ class FileBehavior extends Behavior
     ];
 
     /**
-     * default [$this->owner, 'touch', 'updated_at']
+     * default:
+     *
+     * function ($owner) {
+     *     $owner->touch('updated_at');
+     * };
+     *
      * like yii\behaviors\TimestampBehavior touch method
      * @var string
      */
@@ -63,7 +68,9 @@ class FileBehavior extends Behavior
         }
 
         if(!$this->touchCallback)
-            $this->touchCallback = [$this->owner, 'touch', 'updated_at'];
+            $this->touchCallback = function ($owner) {
+                $owner->touch('updated_at');
+            };
 
         $attributes = [];
         foreach ($this->attributes as $attribute => $options) {
@@ -149,7 +156,7 @@ class FileBehavior extends Behavior
         }
 
         if($needTouch && is_callable($this->touchCallback)) {
-            call_user_func($this->touchCallback);
+            call_user_func($this->touchCallback, $this->owner);
         }
 
         if($this->deleteOldNotAttachedAfterSave) {
