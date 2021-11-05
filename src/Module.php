@@ -231,7 +231,9 @@ class Module extends \yii\base\Module
 
     protected function generateHash($filename, $variant)
     {
-        return substr(md5($this->salt.basename($filename).$this->salt.$variant), 0, 5);
+        $id = basename(dirname($filename));
+
+        return substr(md5($id.$this->salt.basename($filename).$this->salt.$variant), 0, 5);
     }
 
     public function generateFromUrl($url)
