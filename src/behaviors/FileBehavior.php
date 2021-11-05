@@ -29,7 +29,7 @@ class FileBehavior extends Behavior
      */
     public $touchCallback;
 
-    public $deleteOldAfterSave = true;
+    public $deleteOldNotAttachedAfterSave = true;
 
     protected $_related = [];
 
@@ -152,9 +152,9 @@ class FileBehavior extends Behavior
             call_user_func($this->touchCallback);
         }
 
-        if($this->deleteOldAfterSave) {
+        if($this->deleteOldNotAttachedAfterSave) {
             $module = self::getModule();
-            $module->deleteOldFileModels();
+            $module->deleteOldNotAttachedFileModels();
         }
 
     }

@@ -18,7 +18,7 @@ class Module extends \yii\base\Module
 
     public $fileModelTableName = '{{%file_model}}';
 
-    public $oldTime = 3600;
+    public $deleteNotAttachedFileModelsAfter = 3600;
 
     protected $_webroot = '@webroot';
 
@@ -312,16 +312,16 @@ class Module extends \yii\base\Module
 
     }
 
-    public function findOldFileModelsQuery()
+    public function findOldNotAttachedFileModelsQuery()
     {
         return FileModel::find()
             ->andWhere(['or', ['link_type' => null], ['link_id' => null], ['link_attribute' => null]])
-            ->andWhere(['<', 'updated_at', time()-$this->oldTime]);
+            ->andWhere(['<', 'updated_at', time()-$this->deleteNotAttachedFileModelsAfter]);
     }
 
-    public function deleteOldFileModels()
+    public function deleteOldNotAttachedFileModels()
     {
-        foreach($this->findOldFileModelsQuery()->each() as $model) {
+        foreach($this->findOldNotAttachedFileModelsQuery()->each() as $model) {
             $model->delete();
         }
     }
