@@ -256,15 +256,15 @@ class Module extends \yii\base\Module
 
         if(!isset($this->variants[$variant])) return false;
 
-        $basename = basename($pathPart.'.'.$ext);
-        if($hash !== $this->generateHash($basename, $variant))
+        $filePath = $pathPart.'.'.$ext;
+        if($hash !== $this->generateHash($filePath, $variant))
             return false;
 
         $newFilename = $this->getWebroot().$url;
         $fromPath = $this->getPublicToPrivatePath($newFilename);
         $fromPath = pathinfo($fromPath, PATHINFO_DIRNAME);
 
-        $filename = $fromPath.DIRECTORY_SEPARATOR.$basename;
+        $filename = $fromPath.DIRECTORY_SEPARATOR.basename($filePath);
 
         if(!file_exists($filename))
             return false;
@@ -290,13 +290,13 @@ class Module extends \yii\base\Module
         if(!$m) return false;
         list($all, $pathPart, $ext) = $m;
 
-        $basename = basename($pathPart.'.'.$ext);
+        $filePath = $pathPart.'.'.$ext;
 
         $newFilename = $this->getWebroot().$url;
         $fromPath = $this->getPublicToPrivatePath($newFilename);
         $fromPath = pathinfo($fromPath, PATHINFO_DIRNAME);
 
-        $filename = $fromPath.DIRECTORY_SEPARATOR.$basename;
+        $filename = $fromPath.DIRECTORY_SEPARATOR.basename($filePath);
 
         if(!file_exists($filename))
             return false;
