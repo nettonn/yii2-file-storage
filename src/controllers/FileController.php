@@ -17,6 +17,10 @@ class FileController extends Controller
         if(!$ids) {
             return [];
         }
+        if(!is_array($ids)) {
+            $ids = array_map('intval', explode(',', $ids));
+        }
+
         $query = FileModel::find()->where(['in', 'id', $ids])->orderBy('sort ASC');
 
         return $query->all();
