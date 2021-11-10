@@ -20,20 +20,34 @@ class Module extends \yii\base\Module
 
     public $deleteNotAttachedFileModelsAfter = 3600;
 
+    /**
+     * If change exists files may be lost
+     * @var string
+     */
     protected $_webroot = '@webroot';
 
     /**
+     * If change exists files may be lost
      * @var string public setter getter
      */
     protected $_privateStoragePath = '@app/storage/files';
 
     /**
+     * If change exists files may be lost
      * @var string public setter getter
      */
     protected $_publicStoragePath = '@webroot/files';
 
+    /**
+     * If change exists files may be lost
+     * @var int
+     */
     public $directoryLevel = 1;
 
+    /**
+     * If change exists files may be lost
+     * @var string
+     */
     public $salt = 'kagkjgkjg-asgljkgsadg-sadgklhieutkbn';
 
     public $imageExt = ['jpg', 'jpeg', 'gif', 'bmp', 'png'];

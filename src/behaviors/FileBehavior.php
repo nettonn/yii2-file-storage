@@ -1,6 +1,5 @@
 <?php namespace nettonn\yii2filestorage\behaviors;
 
-
 use nettonn\yii2filestorage\models\FileModel;
 use nettonn\yii2filestorage\ModuleTrait;
 use yii\base\Behavior;
