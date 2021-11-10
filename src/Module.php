@@ -50,6 +50,8 @@ class Module extends \yii\base\Module
 //        'orgwm'=> [1920, 1920, 80, DOCROOT.'/media/img/watermark.png', false],
     ];
 
+    public $defaultVariant = 'normal';
+
     public $useFilenameCache = true;
 
     /**
