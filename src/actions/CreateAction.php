@@ -41,19 +41,6 @@ class CreateAction extends Action
                 $model->delete();
                 throw new BadRequestHttpException('File is not image');
             }
-            if(\Yii::$app->getRequest()->get('onlyDefaultThumb')) {
-                $thumbs = $model->getImageThumbs();
-
-                $fileStorageModule = Module::getInstance();
-
-                if(!isset($thumbs[$fileStorageModule->defaultVariant])) {
-                    $model->delete();
-                    throw new BadRequestHttpException('No default variant exists in thumbs');
-                }
-
-                return $thumbs[$fileStorageModule->defaultVariant];
-            }
-            return $model;
         }
 
         return $model;
