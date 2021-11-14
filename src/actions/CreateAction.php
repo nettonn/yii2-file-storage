@@ -1,7 +1,6 @@
 <?php namespace nettonn\yii2filestorage\actions;
 
 use nettonn\yii2filestorage\models\FileModel;
-use nettonn\yii2filestorage\Module;
 use yii\base\Action;
 use yii\helpers\VarDumper;
 use yii\web\BadRequestHttpException;

@@ -2,7 +2,6 @@
 
 use nettonn\yii2filestorage\ModuleTrait;
 use yii\base\Behavior;
-use yii\base\InvalidConfigException;
 use yii\db\BaseActiveRecord;
 
 
