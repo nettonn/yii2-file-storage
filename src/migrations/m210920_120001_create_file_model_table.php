@@ -37,7 +37,7 @@ class m210920_120001_create_file_model_table extends Migration
             'link_id' => $this->integer()->unsigned(),
             'link_attribute' => $this->string(),
             'sort' => $this->smallInteger()->unsigned(),
-            'filename_cache' => $this->string(),
+            'model_path_cache' => $this->string(),
             'created_at' => $this->integer(),
             'updated_at' => $this->integer(),
         ], $tableOptions);

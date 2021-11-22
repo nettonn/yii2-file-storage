@@ -186,10 +186,10 @@ class FileBehavior extends Behavior
             return [$this->fileGet($attribute)];
         }
 
-        $useFilenameCache = self::getModule()->useFilenameCache;
+        $useCache = self::getModule()->useModelPathCache;
         $filenames = [];
         foreach($this->owner->{$attribute} as $model) {
-            $filenames[] = $model->getFilename($useFilenameCache);
+            $filenames[] = $model->getFilename($useCache);
         }
 
         return $filenames;
@@ -203,14 +203,14 @@ class FileBehavior extends Behavior
     public function fileGet($attribute)
     {
         $model = $this->owner->{$attribute};
-        $useFilenameCache = self::getModule()->useFilenameCache;
+        $useCache = self::getModule()->useModelPathCache;
         if(!$model)
             return null;
         if(is_array($model)) {
             $first = reset($model);
-            return $first ? $first->getFilename($useFilenameCache) : null;
+            return $first ? $first->getFilename($useCache) : null;
         }
-        return $model->getFilename($useFilenameCache);
+        return $model->getFilename($useCache);
     }
 
     /**

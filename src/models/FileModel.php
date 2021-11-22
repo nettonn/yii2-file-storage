@@ -29,7 +29,7 @@ use yii\web\UploadedFile;
  * @property int|null $sort
  * @property int|null $created_at
  * @property int|null $updated_at
- * @property string $filename_cache
+ * @property string $model_path_cache
  */
 class FileModel extends ActiveRecord
 {
@@ -122,10 +122,6 @@ class FileModel extends ActiveRecord
                 $this->delete();
                 throw new ServerErrorHttpException('Error saving file model');
             }
-
-            $this->updateAttributes([
-                'filename_cache' => $this->getFilename(),
-            ]);
         } else {
             if(!file_exists($this->getFilename())) {
                 $this->delete();
@@ -147,20 +143,21 @@ class FileModel extends ActiveRecord
     public function getFilename($useCache = false)
     {
         if($useCache) {
-            if($this->filename_cache && file_exists($this->filename_cache))
-                return $this->filename_cache;
-            $this->filename_cache = $this->getFilename();
-            $this->updateAttributes(['filename_cache' => $this->filename_cache]);
-            return $this->filename_cache;
+            $filename = $this->getPrivateStoragePath($useCache).DIRECTORY_SEPARATOR.$this->name;
+            if(file_exists($filename))
+                return $filename;
         }
 
         return $this->getPrivateStoragePath().DIRECTORY_SEPARATOR.$this->name;
     }
 
-    public function getModelPath()
+    public function getModelPath($useCache = false)
     {
+        if($useCache && $this->model_path_cache)
+            return $this->model_path_cache;
+        $module = self::getModule();
         $path = '';
-        $directoryLevel = self::getModule()->directoryLevel;
+        $directoryLevel = $module->directoryLevel;
         $hash = md5($this->id);
         if ($directoryLevel > 0) {
             for ($i = 0; $i < $directoryLevel; ++$i) {
@@ -173,17 +170,21 @@ class FileModel extends ActiveRecord
                 }
             }
         }
-        return trim($path.DIRECTORY_SEPARATOR.$this->id, DIRECTORY_SEPARATOR);
+        $modelPath = trim($path.DIRECTORY_SEPARATOR.$this->id, DIRECTORY_SEPARATOR);
+        if($module->useModelPathCache && $modelPath !== $this->model_path_cache) {
+            $this->updateAttributes(['model_path_cache' => $modelPath]);
+        }
+        return $modelPath;
     }
 
-    public function getPrivateStoragePath()
+    public function getPrivateStoragePath($useCache = false)
     {
-        return self::getModule()->getPrivateStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath();
+        return self::getModule()->getPrivateStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath($useCache);
     }
 
-    public function getPublicStoragePath()
+    public function getPublicStoragePath($useCache = false)
     {
-        return self::getModule()->getPublicStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath();
+        return self::getModule()->getPublicStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath($useCache);
     }
 
     public function getThumbs()

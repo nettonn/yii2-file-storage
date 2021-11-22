@@ -66,7 +66,7 @@ class Module extends \yii\base\Module
 
     public $defaultVariant = 'normal';
 
-    public $useFilenameCache = true;
+    public $useModelPathCache = true;
 
     /**
      * @var string
