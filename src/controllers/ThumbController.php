@@ -1,31 +1,23 @@
 <?php namespace nettonn\yii2filestorage\controllers;
 
-
-use nettonn\yii2filestorage\ModuleTrait;
-use Yii;
-use yii\helpers\FileHelper;
+use nettonn\yii2filestorage\actions\ThumbAction;
 use yii\web\Controller;
-use yii\web\NotFoundHttpException;
 
 class ThumbController extends Controller
 {
-    use ModuleTrait;
-
-    public function actionGet()
+    public function actions()
     {
-        try {
-            $filename = self::getModule()->generateFromUrl(Yii::$app->getRequest()->getUrl());
-        } catch(\Exception $e) {
-            sleep(1);
-            return $this->redirect(Yii::$app->getRequest()->getUrl());
-        }
+        return [
+            'get' => [
+                'class' => ThumbAction::class,
+            ],
+        ];
+    }
 
-        if(!$filename)
-            throw new NotFoundHttpException();
-
-        return Yii::$app->getResponse()->sendFile($filename, null, [
-            'mimeType'=> FileHelper::getMimeType($filename),
-            'inline'=>true,
-        ]);
+    public function verbs()
+    {
+        return [
+            'get'  => ['GET', 'HEAD'],
+        ];
     }
 }
