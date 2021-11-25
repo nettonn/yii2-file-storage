@@ -118,7 +118,7 @@ class Module extends \yii\base\Module
             }
         }
 
-        $image->save($saveFilename, ['jpeg_quality' => $quality]);
+        return $image->save($saveFilename, ['jpeg_quality' => $quality]);
     }
 
     public function setWebroot($path)

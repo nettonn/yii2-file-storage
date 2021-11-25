@@ -10,6 +10,7 @@ use yii\db\ActiveRecord;
 use yii\helpers\BaseStringHelper;
 use yii\helpers\FileHelper;
 use yii\helpers\Inflector;
+use yii\validators\ImageValidator;
 use yii\web\ServerErrorHttpException;
 use yii\web\UploadedFile;
 
@@ -54,7 +55,8 @@ class FileModel extends ActiveRecord
     public function rules()
     {
         return [
-            ['file', 'file', 'maxFiles' => 1 , 'skipOnEmpty' => true],
+            ['file', 'file', 'maxFiles' => 1 , 'skipOnEmpty' => false],
+            ['file', 'allowOnlyOnInsertValidator'],
         ];
     }
 
@@ -72,9 +74,16 @@ class FileModel extends ActiveRecord
         return $fields;
     }
 
+    public function allowOnlyOnInsertValidator($attribute, $params)
+    {
+        if(!$this->isNewRecord && $this->file) {
+            $this->addError($attribute, 'File upload allowed only then create model');
+        }
+    }
+
     public static function find()
     {
-        return Yii::createObject(FileModelQuery::className(), [get_called_class()]);
+        return Yii::createObject(FileModelQuery::class, [get_called_class()]);
     }
 
     public function beforeSave($insert)
@@ -84,7 +93,7 @@ class FileModel extends ActiveRecord
             $this->created_at = $this->updated_at;
         }
 
-        if($this->file) {
+        if($this->file && $insert) {
             $this->mime = FileHelper::getMimeType($this->file->tempName);
             $exts = FileHelper::getExtensionsByMimeType($this->mime);
             $this->ext = end($exts);
@@ -92,32 +101,30 @@ class FileModel extends ActiveRecord
             $this->size = $this->file->size;
             $imageExt = self::getModule()->imageExt;
             $this->is_image = in_array($this->ext, $imageExt);
-            // TODO check is image by validator
         }
 
         return parent::beforeSave($insert);
     }
 
-
     public function afterSave($insert, $changedAttributes)
     {
         parent::afterSave($insert, $changedAttributes);
 
-        if($this->file) {
+        if($this->file && $insert) {
             try {
                 $filename = $this->getFilename();
                 $path = pathinfo($filename, PATHINFO_DIRNAME);
 
-                if(!file_exists($path) && !is_dir($path)) {
-                    FileHelper::createDirectory($path);
-                }
+                FileHelper::createDirectory($path);
 
-                $saved = $this->file->saveAs($filename, false);
+                $module = self::getModule();
 
-                if(!$saved) {
-                    $this->delete();
-                    throw new ServerErrorHttpException('Error saving file model');
-                }
+                $maxWidth = $module->originalImageMaxWidth;
+                $maxHeight = $module->originalImageMaxHeight;
+
+                $module->generateImage($this->file->tempName, $filename, $maxWidth, $maxHeight, false, 90);
+
+                @unlink($this->file->tempName);
             } catch (Exception $e) {
                 $this->delete();
                 throw new ServerErrorHttpException('Error saving file model');
@@ -127,9 +134,6 @@ class FileModel extends ActiveRecord
                 $this->delete();
             }
         }
-        // TODO check max image width height
-        // TODO check file exists
-        // TODO update meta
     }
 
     public function beforeDelete()
