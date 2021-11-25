@@ -55,7 +55,7 @@ class FileModel extends ActiveRecord
     public function rules()
     {
         return [
-            ['file', 'file', 'maxFiles' => 1 , 'skipOnEmpty' => false],
+            ['file', 'file', 'maxFiles' => 1 , 'skipOnEmpty' => true],
             ['file', 'allowOnlyOnInsertValidator'],
         ];
     }
