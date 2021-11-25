@@ -79,6 +79,9 @@ class FileModel extends ActiveRecord
         if(!$this->isNewRecord && $this->file) {
             $this->addError($attribute, 'File upload allowed only then create model');
         }
+        if($this->isNewRecord && !$this->file) {
+            $this->addError($attribute, 'Need to upload file then create model');
+        }
     }
 
     public static function find()
