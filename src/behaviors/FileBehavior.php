@@ -164,19 +164,21 @@ class FileBehavior extends Behavior
 
             $sort = 1;
 
-            $idsString = implode(',', $newIds);
-            $query = FileModel::find()
-                ->where(['in', $this->pkAttribute, $newIds])
-                ->andWhere(['in', 'ext', $extensions])
-                ->orderBy(new Expression("FIELD (`{$this->pkAttribute}`, $idsString)"));
+            if($newIds) {
+                $idsString = implode(',', $newIds);
+                $query = FileModel::find()
+                    ->where(['in', $this->pkAttribute, $newIds])
+                    ->andWhere(['in', 'ext', $extensions])
+                    ->orderBy(new Expression("FIELD (`{$this->pkAttribute}`, $idsString)"));
 
-            foreach($query->all() as $model) {
-                $model->link_type = $this->ownerClass;
-                $model->link_id = $this->owner->{$this->pkAttribute};
-                $model->link_attribute = $attribute;
-                $model->sort = $sort++;
-                if(!$model->save()) {
-                    \Yii::error('Cant save FileModel with id '.$model->id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
+                foreach($query->all() as $model) {
+                    $model->link_type = $this->ownerClass;
+                    $model->link_id = $this->owner->{$this->pkAttribute};
+                    $model->link_attribute = $attribute;
+                    $model->sort = $sort++;
+                    if(!$model->save()) {
+                        \Yii::error('Cant save FileModel with id '.$model->id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
+                    }
                 }
             }
 
