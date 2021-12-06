@@ -91,11 +91,6 @@ class FileModel extends ActiveRecord
 
     public function beforeSave($insert)
     {
-        $this->updated_at = time();
-        if($insert) {
-            $this->created_at = $this->updated_at;
-        }
-
         if($this->file && $insert) {
             $this->mime = FileHelper::getMimeType($this->file->tempName);
             $exts = FileHelper::getExtensionsByMimeType($this->mime);
@@ -104,6 +99,12 @@ class FileModel extends ActiveRecord
             $this->size = $this->file->size;
             $imageExt = self::getModule()->imageExt;
             $this->is_image = in_array($this->ext, $imageExt);
+        }
+
+        if($insert) {
+            $this->created_at = $this->updated_at = time();
+        } elseif(!empty($this->dirtyAttributes)) {
+            $this->updated_at = time();
         }
 
         return parent::beforeSave($insert);

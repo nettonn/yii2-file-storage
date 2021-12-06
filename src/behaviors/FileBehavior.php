@@ -13,13 +13,21 @@ class FileBehavior extends Behavior
 {
     use ModuleTrait;
 
+    /**
+     * @var BaseActiveRecord
+     */
+    public $owner;
+
     public $attributes = [
         'images' => [
+            'idAttribute' => 'images_id',
             'multiple' => true,
             'image' => true,
             'extensions' => ['jpg', 'jpeg', 'png'], // if image is true will use from module config
         ]
     ];
+
+    protected $attributeIds = [];
 
     /**
      * default:
@@ -45,10 +53,6 @@ class FileBehavior extends Behavior
     public function events()
     {
         return [
-//            BaseActiveRecord::EVENT_INIT          => 'afterFind',
-//            BaseActiveRecord::EVENT_AFTER_FIND    => 'afterFind',
-//            BaseActiveRecord::EVENT_BEFORE_INSERT => 'beforeSave',
-//            BaseActiveRecord::EVENT_BEFORE_UPDATE => 'beforeSave',
             BaseActiveRecord::EVENT_AFTER_INSERT  => 'afterSave',
             BaseActiveRecord::EVENT_AFTER_UPDATE  => 'afterSave',
             BaseActiveRecord::EVENT_BEFORE_DELETE => 'beforeDelete',
@@ -62,9 +66,13 @@ class FileBehavior extends Behavior
     {
         parent::attach($owner);
 
-        if(is_array($this->owner->getPrimaryKey())) {
+        $owner = $this->owner;
+
+        if(is_array($owner->getPrimaryKey())) {
             throw new InvalidConfigException('Composite primary keys not allowed');
         }
+
+        $module = self::getModule();
 
         if(!$this->touchCallback)
             $this->touchCallback = function ($owner) {
@@ -73,17 +81,20 @@ class FileBehavior extends Behavior
 
         $attributes = [];
         foreach ($this->attributes as $attribute => $options) {
-            $options['multiple'] = isset($options['multiple']) ? $options['multiple'] : false;
-            $options['image'] = isset($options['image']) ? $options['image'] : true;
+            $options['idAttribute'] = $options['idAttribute'] ?? $attribute.'_id';
+            $options['multiple'] = $options['multiple'] ?? false;
+            $options['image'] = $options['image'] ?? true;
             if($options['image']) {
-                $options['extensions'] = self::getModule()->imageExt;
+                $options['extensions'] = $module->imageExt;
             } else {
-                $options['extensions'] = isset($options['extensions']) ? $options['extensions'] : [];
+                $options['extensions'] = $options['extensions'] ?? [];
             }
 
-            $attributes[$attribute] = $options;
+            $this->attributeIds[$options['idAttribute']] = $attribute;
 
-            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute.'_id');
+            $owner->getValidators()->append(Validator::createValidator('safe', $owner, $options['idAttribute']));
+
+            $attributes[$attribute] = $options;
         }
         $this->attributes = $attributes;
     }
@@ -303,8 +314,8 @@ class FileBehavior extends Behavior
             return true;
         }
 
-        $attribute = $this->filterSuffix($name, '_id');
-        if(isset($this->attributes[$attribute]))
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute]))
             return true;
 
         return parent::canGetProperty($name, $checkVars);
@@ -312,17 +323,18 @@ class FileBehavior extends Behavior
 
     public function canSetProperty($name, $checkVars = true)
     {
-        $attribute = $this->filterSuffix($name, '_id');
-        if(isset($this->attributes[$attribute]))
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute])) {
             return true;
+        }
 
         return parent::canSetProperty($name, $checkVars);
     }
 
     public function __set($name, $value)
     {
-        if(isset($this->attributes[$this->filterSuffix($name, '_id')])) {
-            $attribute = $this->filterSuffix($name, '_id');
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute])) {
             $this->_values[$attribute] = $value;
         } else {
             parent::__set($name, $value);
@@ -335,8 +347,9 @@ class FileBehavior extends Behavior
         if($relation) {
             return $relation->findFor($name, $this->owner);
         }
-        $attribute = $this->filterSuffix($name, '_id');
-        if(isset($this->attributes[$attribute])) {
+
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute])) {
             if ($this->attributes[$attribute]['multiple']) {
                 $attributeValue = $this->owner->{$attribute};
                 return ArrayHelper::getColumn($attributeValue, 'id');
@@ -368,10 +381,5 @@ class FileBehavior extends Behavior
                 return true;
         }
         return parent::hasMethod($name);
-    }
-
-    protected function filterSuffix($value, $suffix)
-    {
-        return substr($value, 0, strlen($value) - strlen($suffix));
     }
 }
