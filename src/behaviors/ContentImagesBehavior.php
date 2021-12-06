@@ -15,7 +15,13 @@ class ContentImagesBehavior extends Behavior
 
     public $contentAttributes = ['content'];
 
-    public $imagesAttributeId = 'content_images_id';
+    public $imagesAttribute = 'content_images_id';
+
+    /**
+     * if not set will add suffix _id to $imagesAttribute
+     * @var string
+     */
+    public $imagesAttributeId;
 
     /**
      * @inheritdoc
@@ -31,7 +37,7 @@ class ContentImagesBehavior extends Behavior
     public function beforeSave($event)
     {
         $owner = $this->owner;
-        $imageIdsAttribute = $this->imagesAttributeId;
+        $imageIdsAttribute = $this->imagesAttributeId ?? $this->imagesAttribute.'_id';
 
         $ids = [];
 
