@@ -15,7 +15,7 @@ class ContentImagesBehavior extends Behavior
 
     public $contentAttributes = ['content'];
 
-    public $imagesAttribute = 'content_images';
+    public $imagesAttributeId = 'content_images_id';
 
     /**
      * @inheritdoc
@@ -23,20 +23,15 @@ class ContentImagesBehavior extends Behavior
     public function events()
     {
         return [
-//            BaseActiveRecord::EVENT_INIT          => 'afterFind',
-//            BaseActiveRecord::EVENT_AFTER_FIND    => 'afterFind',
             BaseActiveRecord::EVENT_BEFORE_INSERT => 'beforeSave',
             BaseActiveRecord::EVENT_BEFORE_UPDATE => 'beforeSave',
-//            BaseActiveRecord::EVENT_AFTER_INSERT  => 'afterSave',
-//            BaseActiveRecord::EVENT_AFTER_UPDATE  => 'afterSave',
-//            BaseActiveRecord::EVENT_BEFORE_DELETE => 'beforeDelete',
         ];
     }
 
     public function beforeSave($event)
     {
         $owner = $this->owner;
-        $imageIdsAttribute = $this->imagesAttribute.'_id';
+        $imageIdsAttribute = $this->imagesAttributeId;
 
         $ids = [];
 

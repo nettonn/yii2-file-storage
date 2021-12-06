@@ -4,7 +4,9 @@ use nettonn\yii2filestorage\models\FileModel;
 use nettonn\yii2filestorage\ModuleTrait;
 use yii\base\Behavior;
 use yii\base\InvalidConfigException;
+use yii\db\ActiveRecord;
 use yii\db\BaseActiveRecord;
+use yii\db\Expression;
 use yii\helpers\ArrayHelper;
 use yii\helpers\VarDumper;
 use yii\validators\Validator;
@@ -20,12 +22,16 @@ class FileBehavior extends Behavior
 
     public $attributes = [
         'images' => [
-            'idAttribute' => 'images_id',
+            'attribute_id' => 'images_id',
             'multiple' => true,
             'image' => true,
             'extensions' => ['jpg', 'jpeg', 'png'], // if image is true will use from module config
         ]
     ];
+
+    protected $ownerClass;
+
+    protected $pkAttribute;
 
     protected $attributeIds = [];
 
@@ -42,6 +48,13 @@ class FileBehavior extends Behavior
     public $touchCallback;
 
     public $deleteOldNotAttachedAfterSave = true;
+
+    /**
+     * if false add validators in attached model
+     * [['images_id', 'photo_id'], 'each', 'rule' => ['integer']]
+     * @var bool
+     */
+    public $addValidatorsOnAttach = false;
 
     protected $_related = [];
 
@@ -61,16 +74,24 @@ class FileBehavior extends Behavior
 
     /**
      * @param BaseActiveRecord $owner
+     * @throws InvalidConfigException
      */
     public function attach($owner)
     {
         parent::attach($owner);
 
-        $owner = $this->owner;
+        $ownerClass = get_class($this->owner);
+        if(!is_subclass_of($ownerClass, ActiveRecord::class)) {
+            throw new InvalidConfigException('Attach allowed only for children of ActiveRecord');
+        }
 
-        if(is_array($owner->getPrimaryKey())) {
+        $primaryKey = $ownerClass::primaryKey();
+
+        if(count($primaryKey) > 1) {
             throw new InvalidConfigException('Composite primary keys not allowed');
         }
+        $this->ownerClass = $ownerClass;
+        $this->pkAttribute = current($primaryKey);
 
         $module = self::getModule();
 
@@ -81,18 +102,20 @@ class FileBehavior extends Behavior
 
         $attributes = [];
         foreach ($this->attributes as $attribute => $options) {
-            $options['idAttribute'] = $options['idAttribute'] ?? $attribute.'_id';
+            $options['attribute_id'] = $options['attribute_id'] ?? $attribute.'_id';
             $options['multiple'] = $options['multiple'] ?? false;
-            $options['image'] = $options['image'] ?? true;
-            if($options['image']) {
+            $options['is_image'] = $options['is_image'] ?? true;
+            if($options['is_image']) {
                 $options['extensions'] = $module->imageExt;
             } else {
                 $options['extensions'] = $options['extensions'] ?? [];
             }
 
-            $this->attributeIds[$options['idAttribute']] = $attribute;
+            $this->attributeIds[$options['attribute_id']] = $attribute;
 
-            $owner->getValidators()->append(Validator::createValidator('safe', $owner, $options['idAttribute']));
+            if($this->addValidatorsOnAttach) {
+                $owner->getValidators()->append(Validator::createValidator('safe', $owner, $options['attribute_id']));
+            }
 
             $attributes[$attribute] = $options;
         }
@@ -118,13 +141,13 @@ class FileBehavior extends Behavior
             }
 
             if($options['multiple']) {
-                $currentIds = $this->getRelation($attribute)->select('id')->column();
+                $currentIds = $this->getRelation($attribute)->select($this->pkAttribute)->column();
             } else {
                 if(count($newIds) >1) {
                     $newIds = array_slice($newIds, 0, 1);
                 }
 
-                $currentIds = [$this->getRelation($attribute)->select('id')->scalar()];
+                $currentIds = [$this->getRelation($attribute)->select($this->pkAttribute)->scalar()];
             }
 
             if($currentIds !== $newIds) {
@@ -132,7 +155,7 @@ class FileBehavior extends Behavior
             }
 
             if($deleteIds = array_filter(array_diff($currentIds, $newIds))) {
-                foreach(FileModel::find()->where(['in', 'id', $deleteIds])->all() as $model) {
+                foreach(FileModel::find()->where(['in', $this->pkAttribute, $deleteIds])->all() as $model) {
                     $model->delete();
                 }
             }
@@ -140,21 +163,23 @@ class FileBehavior extends Behavior
             $extensions = $this->attributes[$attribute]['extensions'];
 
             $sort = 1;
-            foreach($newIds as $id) {
-                $model = FileModel::find()->where(['id' => $id])->andWhere(['in', 'ext', $extensions])->one();
-                if($model) {
-                    $model->link_type = get_class($this->owner);
-                    $model->link_id = $this->owner->id;
-                    $model->link_attribute = $attribute;
-                    $model->sort = $sort++;
-                    if(!$model->save()) {
-                        \Yii::error('Cant save FileModel with id '.$id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
-                    }
-                } else {
-                    \Yii::error('Cant find FileModel with id '.$id);
-                }
 
+            $idsString = implode(',', $newIds);
+            $query = FileModel::find()
+                ->where(['in', $this->pkAttribute, $newIds])
+                ->andWhere(['in', 'ext', $extensions])
+                ->orderBy(new Expression("FIELD (`{$this->pkAttribute}`, $idsString)"));
+
+            foreach($query->all() as $model) {
+                $model->link_type = $this->ownerClass;
+                $model->link_id = $this->owner->{$this->pkAttribute};
+                $model->link_attribute = $attribute;
+                $model->sort = $sort++;
+                if(!$model->save()) {
+                    \Yii::error('Cant save FileModel with id '.$model->id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
+                }
             }
+
             unset($this->_related[$attribute]);
             unset($this->_values[$attribute]);
             unset($this->owner->{$attribute});
@@ -173,13 +198,12 @@ class FileBehavior extends Behavior
             $module = self::getModule();
             $module->deleteOldNotAttachedFileModels();
         }
-
     }
 
     public function beforeDelete($event)
     {
         $models = FileModel::find()
-            ->where(['link_type' => get_class($this->owner), 'link_id' => $this->owner->id])
+            ->where(['link_type' => $this->ownerClass, 'link_id' => $this->owner->{$this->pkAttribute}])
             ->all();
         foreach($models as $model) {
             $model->delete();
@@ -291,16 +315,16 @@ class FileBehavior extends Behavior
 
             if($this->attributes[$attribute]['multiple']) {
                 $this->_related[$attribute] = $this->owner
-                    ->hasMany(FileModel::class, ['link_id' => 'id'])
+                    ->hasMany(FileModel::class, ['link_id' => $this->pkAttribute])
                     ->andWhere(['link_attribute' => $attribute])
-                    ->andWhere(['link_type' => get_class($this->owner)])
+                    ->andWhere(['link_type' => $this->ownerClass])
                     ->andWhere(['in', 'ext', $extensions])
                     ->orderBy('sort ASC');
             } else {
                 $this->_related[$attribute] = $this->owner
-                    ->hasOne(FileModel::class, ['link_id' => 'id'])
+                    ->hasOne(FileModel::class, ['link_id' => $this->pkAttribute])
                     ->andWhere(['link_attribute' => $attribute])
-                    ->andWhere(['link_type' => get_class($this->owner)])
+                    ->andWhere(['link_type' => $this->ownerClass])
                     ->andWhere(['in', 'ext', $extensions])
                     ->orderBy('sort ASC');
             }
@@ -355,7 +379,7 @@ class FileBehavior extends Behavior
                 return ArrayHelper::getColumn($attributeValue, 'id');
             } else {
                 $attributeValue = $this->owner->{$attribute};
-                return isset($attributeValue['id']) ? $attributeValue['id'] : null;
+                return $attributeValue['id'] ?? null;
             }
         }
         return parent::__get($name);
