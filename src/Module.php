@@ -109,7 +109,7 @@ class Module extends \yii\base\Module
                 'height' => $options['height'],
                 'quality' => $options['quality'] ?? $this->defaultQuality,
                 'adaptive' => $options['adaptive'] ?? false,
-                'watermark' => $options['watermark'] ? Yii::getAlias($options['watermark']) : null,
+                'watermark' => isset($options['watermark']) && $options['watermark'] ? Yii::getAlias($options['watermark']) : null,
             ];
         }
 
