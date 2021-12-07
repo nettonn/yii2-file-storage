@@ -257,6 +257,9 @@ class FileBehavior extends Behavior
     {
         $module = self::getModule();
         $result = [];
+        if(!$variants) {
+            $variants = array_keys($module->variants);
+        }
         foreach($this->filesGet($attribute) as $filename) {
             $thumbs = [];
             foreach($variants as $variant) {
@@ -270,10 +273,13 @@ class FileBehavior extends Behavior
     /**
      * return for all files [['path/to/variant1', 'path/to/variant2'], [...], ...]
      */
-    public function filesThumbGet(String $attribute, String $variant, $relative = true)
+    public function filesThumbGet(String $attribute, String $variant = null, $relative = true)
     {
         $module = self::getModule();
         $result = [];
+        if(!$variant) {
+            $variant = $module->defaultVariant;
+        }
         foreach($this->filesGet($attribute) as $filename) {
             $result[] = $module->getThumb($filename, $variant, $relative);
         }
