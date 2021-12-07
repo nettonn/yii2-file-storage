@@ -4,6 +4,7 @@ use Imagick;
 use Imagine\Image\ManipulatorInterface;
 use Imagine\Image\Point;
 use nettonn\yii2filestorage\models\FileModel;
+use yii\base\InvalidConfigException;
 use yii\imagine\Image;
 use Yii;
 use yii\base\InvalidParamException;
@@ -54,17 +55,32 @@ class Module extends \yii\base\Module
 
     /**
      * Variants of generated image thumbs - width, height, quality, watermark, adaptive
-     * имя \w+
+     * variant name pattern \w+
+     * watermark must be full filename or filename with pathAlias like @webroot/watermark.png
      * @var array
      */
     public $variants = [
-        'thumb'=> [400, 300, 85, false, true],
-        'normal' => [1280, 1280, 80, false, false],
-        'original'=> [1920, 1920, 80, false, false],
-//        'orgwm'=> [1920, 1920, 80, DOCROOT.'/media/img/watermark.png', false],
+        'thumb' => [
+            'width' => 400,
+            'height' => 300,
+            'quality' => 85,
+            'adaptive' => true,
+        ],
+        'normal' => [
+            'width' => 1280,
+            'height' => 1280,
+            'quality' => 80,
+        ],
+        'original' => [
+            'width' => 1920,
+            'height' => 1920,
+            'quality' => 80,
+        ],
     ];
 
     public $defaultVariant = 'normal';
+
+    public $defaultQuality = 90;
 
     public $useModelPathCache = true;
 
@@ -75,11 +91,35 @@ class Module extends \yii\base\Module
 
     public function init()
     {
-        $this->setAliases(['@nettonn/yii2filestorage' => __DIR__]);
         parent::init();
+        $this->setAliases(['@nettonn/yii2filestorage' => __DIR__]);
+
+        if(!$this->variants) {
+            throw new InvalidConfigException('Please specify variants for image thumbs');
+        }
+
+        $variants = $this->variants;
+        foreach($variants as $variant => $options) {
+            if(!$options['width'] || !$options['height']) {
+                throw new InvalidConfigException('Please specify width and height for image variant');
+            }
+
+            $variants[$variant] = [
+                'width' => $options['width'],
+                'height' => $options['height'],
+                'quality' => $options['quality'] ?? $this->defaultQuality,
+                'adaptive' => $options['adaptive'] ?? false,
+                'watermark' => $options['watermark'] ? Yii::getAlias($options['watermark']) : null,
+            ];
+        }
+
+        $this->defaultVariant = isset($variants[$this->defaultVariant])
+            ? $this->defaultVariant : current(array_keys($variants));
+
+        $this->variants = $variants;
     }
 
-    public function generateImage($filename, $saveFilename, $toWidth, $toHeight, $adaptive = false, $quality = 80, $watermark = false)
+    public function generateImage($filename, $saveFilename, $toWidth, $toHeight, $adaptive = false, $quality = 80, $watermark = null)
     {
         if($adaptive) {
             $image = Image::thumbnail($filename, $toWidth, $toHeight, ManipulatorInterface::THUMBNAIL_OUTBOUND);
@@ -207,12 +247,12 @@ class Module extends \yii\base\Module
     /**
      * Get new public filename for private filename
      * @param $filename
-     * @param false $variant
+     * @param string $variant
      * @param true $relative
      * @return string|string[]
      * @throws \Exception
      */
-    public function getThumb($filename, $variant = false, $relative = true)
+    public function getThumb($filename, $variant = null, $relative = true)
     {
         if(!file_exists($filename))
             throw new InvalidParamException('File not exists '.$filename);
@@ -229,7 +269,7 @@ class Module extends \yii\base\Module
         return $newFilename;
     }
 
-    protected function getPublicFilename($filename, $variant = false)
+    protected function getPublicFilename($filename, $variant = null)
     {
         $pathParts = pathinfo($filename);
         $path = $pathParts['dirname'];
@@ -290,13 +330,18 @@ class Module extends \yii\base\Module
         $newPath = pathinfo($newFilename, PATHINFO_DIRNAME);
         FileHelper::createDirectory($newPath);
 
-        $width = $this->variants[$variant][0];
-        $height = $this->variants[$variant][1];
-        $quality = isset($this->variants[$variant][2]) ? $this->variants[$variant][2] : 90;
-        $watermark = isset($this->variants[$variant][3]) ? $this->variants[$variant][3] : false;
-        $adaptive = isset($this->variants[$variant][4]) ? $this->variants[$variant][4] : false;
+        $variantOptions = $this->variants[$variant];
 
-        usleep(mt_rand(500, 3000)); // For hostings who not allow many generates at once
+        /**
+         * @var number $width
+         * @var number $height
+         * @var number $quality
+         * @var bool $adaptive
+         * @var bool|string $watermark
+         */
+        extract($variantOptions);
+
+        usleep(mt_rand(500, 3000)); // For hosting providers who not allow many generates at once
 
         $this->generateImage($filename, $newFilename, $width, $height, $adaptive, $quality, $watermark);
         return $newFilename;
