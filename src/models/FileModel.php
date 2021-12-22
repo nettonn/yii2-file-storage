@@ -10,6 +10,7 @@ use yii\db\ActiveRecord;
 use yii\helpers\BaseStringHelper;
 use yii\helpers\FileHelper;
 use yii\helpers\Inflector;
+use yii\validators\ImageValidator;
 use yii\web\ServerErrorHttpException;
 use yii\web\UploadedFile;
 
@@ -29,7 +30,7 @@ use yii\web\UploadedFile;
  * @property int|null $sort
  * @property int|null $created_at
  * @property int|null $updated_at
- * @property string $filename_cache
+ * @property string $model_path_cache
  */
 class FileModel extends ActiveRecord
 {
@@ -55,6 +56,7 @@ class FileModel extends ActiveRecord
     {
         return [
             ['file', 'file', 'maxFiles' => 1 , 'skipOnEmpty' => true],
+            ['file', 'allowOnlyOnInsertValidator'],
         ];
     }
 
@@ -72,19 +74,24 @@ class FileModel extends ActiveRecord
         return $fields;
     }
 
+    public function allowOnlyOnInsertValidator($attribute, $params)
+    {
+        if(!$this->isNewRecord && $this->file) {
+            $this->addError($attribute, 'File upload allowed only then create model');
+        }
+        if($this->isNewRecord && !$this->file) {
+            $this->addError($attribute, 'Need to upload file then create model');
+        }
+    }
+
     public static function find()
     {
-        return Yii::createObject(FileModelQuery::className(), [get_called_class()]);
+        return Yii::createObject(FileModelQuery::class, [get_called_class()]);
     }
 
     public function beforeSave($insert)
     {
-        $this->updated_at = time();
-        if($insert) {
-            $this->created_at = $this->updated_at;
-        }
-
-        if($this->file) {
+        if($this->file && $insert) {
             $this->mime = FileHelper::getMimeType($this->file->tempName);
             $exts = FileHelper::getExtensionsByMimeType($this->mime);
             $this->ext = end($exts);
@@ -92,48 +99,45 @@ class FileModel extends ActiveRecord
             $this->size = $this->file->size;
             $imageExt = self::getModule()->imageExt;
             $this->is_image = in_array($this->ext, $imageExt);
-            // TODO check is image by validator
+        }
+
+        if($insert) {
+            $this->created_at = $this->updated_at = time();
+        } elseif(!empty($this->dirtyAttributes)) {
+            $this->updated_at = time();
         }
 
         return parent::beforeSave($insert);
     }
 
-
     public function afterSave($insert, $changedAttributes)
     {
         parent::afterSave($insert, $changedAttributes);
 
-        if($this->file) {
+        if($this->file && $insert) {
             try {
                 $filename = $this->getFilename();
                 $path = pathinfo($filename, PATHINFO_DIRNAME);
 
-                if(!file_exists($path) && !is_dir($path)) {
-                    FileHelper::createDirectory($path);
-                }
+                FileHelper::createDirectory($path);
 
-                $saved = $this->file->saveAs($filename);
+                $module = self::getModule();
 
-                if(!$saved) {
-                    $this->delete();
-                    throw new ServerErrorHttpException('Error saving file model');
-                }
+                $maxWidth = $module->originalImageMaxWidth;
+                $maxHeight = $module->originalImageMaxHeight;
+
+                $module->generateImage($this->file->tempName, $filename, $maxWidth, $maxHeight, false, 90);
+
+                @unlink($this->file->tempName);
             } catch (Exception $e) {
                 $this->delete();
                 throw new ServerErrorHttpException('Error saving file model');
             }
-
-            $this->updateAttributes([
-                'filename_cache' => $this->getFilename(),
-            ]);
         } else {
             if(!file_exists($this->getFilename())) {
                 $this->delete();
             }
         }
-        // TODO check max image width height
-        // TODO check file exists
-        // TODO update meta
     }
 
     public function beforeDelete()
@@ -147,20 +151,21 @@ class FileModel extends ActiveRecord
     public function getFilename($useCache = false)
     {
         if($useCache) {
-            if($this->filename_cache && file_exists($this->filename_cache))
-                return $this->filename_cache;
-            $this->filename_cache = $this->getFilename();
-            $this->updateAttributes(['filename_cache' => $this->filename_cache]);
-            return $this->filename_cache;
+            $filename = $this->getPrivateStoragePath($useCache).DIRECTORY_SEPARATOR.$this->name;
+            if(file_exists($filename))
+                return $filename;
         }
 
         return $this->getPrivateStoragePath().DIRECTORY_SEPARATOR.$this->name;
     }
 
-    public function getModelPath()
+    public function getModelPath($useCache = false)
     {
+        if($useCache && $this->model_path_cache)
+            return $this->model_path_cache;
+        $module = self::getModule();
         $path = '';
-        $directoryLevel = self::getModule()->directoryLevel;
+        $directoryLevel = $module->directoryLevel;
         $hash = md5($this->id);
         if ($directoryLevel > 0) {
             for ($i = 0; $i < $directoryLevel; ++$i) {
@@ -173,17 +178,21 @@ class FileModel extends ActiveRecord
                 }
             }
         }
-        return trim($path.DIRECTORY_SEPARATOR.$this->id, DIRECTORY_SEPARATOR);
+        $modelPath = trim($path.DIRECTORY_SEPARATOR.$this->id, DIRECTORY_SEPARATOR);
+        if($module->useModelPathCache && $modelPath !== $this->model_path_cache) {
+            $this->updateAttributes(['model_path_cache' => $modelPath]);
+        }
+        return $modelPath;
     }
 
-    public function getPrivateStoragePath()
+    public function getPrivateStoragePath($useCache = false)
     {
-        return self::getModule()->getPrivateStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath();
+        return self::getModule()->getPrivateStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath($useCache);
     }
 
-    public function getPublicStoragePath()
+    public function getPublicStoragePath($useCache = false)
     {
-        return self::getModule()->getPublicStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath();
+        return self::getModule()->getPublicStoragePath() . DIRECTORY_SEPARATOR . $this->getModelPath($useCache);
     }
 
     public function getThumbs()

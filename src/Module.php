@@ -3,7 +3,8 @@
 use Imagick;
 use Imagine\Image\ManipulatorInterface;
 use Imagine\Image\Point;
-use yii\helpers\Url;
+use nettonn\yii2filestorage\models\FileModel;
+use yii\base\InvalidConfigException;
 use yii\imagine\Image;
 use Yii;
 use yii\base\InvalidParamException;
@@ -18,42 +19,107 @@ class Module extends \yii\base\Module
 
     public $fileModelTableName = '{{%file_model}}';
 
+    public $deleteNotAttachedFileModelsAfter = 3600;
+
     /**
+     * If change exists files may be lost
+     * @var string
+     */
+    protected $_webroot = '@webroot';
+
+    /**
+     * If change exists files may be lost
      * @var string public setter getter
      */
     protected $_privateStoragePath = '@app/storage/files';
 
     /**
+     * If change exists files may be lost
      * @var string public setter getter
      */
     protected $_publicStoragePath = '@webroot/files';
 
+    /**
+     * If change exists files may be lost
+     * @var int
+     */
     public $directoryLevel = 1;
 
+    /**
+     * If change exists files may be lost
+     * @var string
+     */
     public $salt = 'kagkjgkjg-asgljkgsadg-sadgklhieutkbn';
 
     public $imageExt = ['jpg', 'jpeg', 'gif', 'bmp', 'png'];
 
     /**
      * Variants of generated image thumbs - width, height, quality, watermark, adaptive
-     * имя \w+
+     * variant name pattern \w+
+     * watermark must be full filename or filename with pathAlias like @webroot/watermark.png
      * @var array
      */
     public $variants = [
-        'thumb'=> [400, 300, 85, false, true],
-        'normal' => [1280, 1280, 80, false, false],
-        'original'=> [1920, 1920, 80, false, false],
-//        'orgwm'=> [1920, 1920, 80, DOCROOT.'/media/img/watermark.png', false],
+        'thumb' => [
+            'width' => 400,
+            'height' => 300,
+            'quality' => 85,
+            'adaptive' => true,
+        ],
+        'normal' => [
+            'width' => 1280,
+            'height' => 1280,
+            'quality' => 80,
+        ],
+        'original' => [
+            'width' => 1920,
+            'height' => 1920,
+            'quality' => 80,
+        ],
     ];
 
-    public $useFilenameCache = true;
+    public $defaultVariant = 'normal';
+
+    public $defaultQuality = 90;
+
+    public $useModelPathCache = true;
 
     /**
      * @var string
      */
     protected $watermark;
 
-    public function generateImage($filename, $saveFilename, $toWidth, $toHeight, $adaptive = false, $quality = 80, $watermark = false)
+    public function init()
+    {
+        parent::init();
+        $this->setAliases(['@nettonn/yii2filestorage' => __DIR__]);
+
+        if(!$this->variants) {
+            throw new InvalidConfigException('Please specify variants for image thumbs');
+        }
+
+        $variants = $this->variants;
+        foreach($variants as $variant => $options) {
+            if(!$options['width'] || !$options['height']) {
+                throw new InvalidConfigException('Please specify width and height for image variant');
+            }
+
+            $variants[$variant] = [
+                'width' => $options['width'],
+                'height' => $options['height'],
+                'quality' => $options['quality'] ?? $this->defaultQuality,
+                'adaptive' => $options['adaptive'] ?? false,
+                'watermark' => isset($options['watermark']) && $options['watermark'] ? Yii::getAlias($options['watermark']) : null,
+            ];
+        }
+
+        $this->defaultVariant = isset($variants[$this->defaultVariant])
+            ? $this->defaultVariant : current(array_keys($variants));
+
+        $this->variants = $variants;
+    }
+
+    public function generateImage($filename, $saveFilename, $toWidth, $toHeight, $adaptive = false, $quality = 80, $watermark = null)
     {
         if($adaptive) {
             $image = Image::thumbnail($filename, $toWidth, $toHeight, ManipulatorInterface::THUMBNAIL_OUTBOUND);
@@ -92,7 +158,22 @@ class Module extends \yii\base\Module
             }
         }
 
-        $image->save($saveFilename, ['jpeg_quality' => $quality]);
+        return $image->save($saveFilename, ['jpeg_quality' => $quality]);
+    }
+
+    public function setWebroot($path)
+    {
+        $this->_webroot = $path;
+        $this->_webrootCached = null;
+    }
+
+    private $_webrootCached = null;
+
+    public function getWebroot()
+    {
+        if(null === $this->_webrootCached)
+            $this->_webrootCached = rtrim(Yii::getAlias($this->_webroot), '/');
+        return $this->_webrootCached;
     }
 
     public function setPrivateStoragePath($path)
@@ -106,7 +187,7 @@ class Module extends \yii\base\Module
     public function getPrivateStoragePath()
     {
         if(null === $this->_privateStoragePathCached)
-            $this->_privateStoragePathCached = Yii::getAlias($this->_privateStoragePath);
+            $this->_privateStoragePathCached = rtrim(Yii::getAlias($this->_privateStoragePath), '/');
         return $this->_privateStoragePathCached;
     }
 
@@ -121,7 +202,7 @@ class Module extends \yii\base\Module
     public function getPublicStoragePath()
     {
         if(null === $this->_publicStoragePathCached)
-            $this->_publicStoragePathCached = Yii::getAlias($this->_publicStoragePath);
+            $this->_publicStoragePathCached = rtrim(Yii::getAlias($this->_publicStoragePath), '/');
         return $this->_publicStoragePathCached;
     }
 
@@ -166,12 +247,12 @@ class Module extends \yii\base\Module
     /**
      * Get new public filename for private filename
      * @param $filename
-     * @param false $variant
+     * @param string $variant
      * @param true $relative
      * @return string|string[]
      * @throws \Exception
      */
-    public function getThumb($filename, $variant = false, $relative = true)
+    public function getThumb($filename, $variant = null, $relative = true)
     {
         if(!file_exists($filename))
             throw new InvalidParamException('File not exists '.$filename);
@@ -182,13 +263,13 @@ class Module extends \yii\base\Module
 
         $newFilename = $this->getPublicFilename($filename, $variant);
         if($relative) {
-            return str_replace(Yii::getAlias('@webroot'), '', $newFilename);
+            return str_replace($this->getWebroot(), '', $newFilename);
         }
 
         return $newFilename;
     }
 
-    protected function getPublicFilename($filename, $variant = false)
+    protected function getPublicFilename($filename, $variant = null)
     {
         $pathParts = pathinfo($filename);
         $path = $pathParts['dirname'];
@@ -208,7 +289,9 @@ class Module extends \yii\base\Module
 
     protected function generateHash($filename, $variant)
     {
-        return substr(md5($this->salt.basename($filename).$this->salt.$variant), 0, 5);
+        $id = basename(dirname($filename));
+
+        return substr(md5($id.$this->salt.basename($filename).$this->salt.$variant), 0, 5);
     }
 
     public function generateFromUrl($url)
@@ -231,15 +314,15 @@ class Module extends \yii\base\Module
 
         if(!isset($this->variants[$variant])) return false;
 
-        $basename = basename($pathPart.'.'.$ext);
-        if($hash !== $this->generateHash($basename, $variant))
+        $filePath = $pathPart.'.'.$ext;
+        if($hash !== $this->generateHash($filePath, $variant))
             return false;
 
-        $newFilename = Yii::getAlias('@webroot').$url;
+        $newFilename = $this->getWebroot().$url;
         $fromPath = $this->getPublicToPrivatePath($newFilename);
         $fromPath = pathinfo($fromPath, PATHINFO_DIRNAME);
 
-        $filename = $fromPath.DIRECTORY_SEPARATOR.$basename;
+        $filename = $fromPath.DIRECTORY_SEPARATOR.basename($filePath);
 
         if(!file_exists($filename))
             return false;
@@ -247,13 +330,18 @@ class Module extends \yii\base\Module
         $newPath = pathinfo($newFilename, PATHINFO_DIRNAME);
         FileHelper::createDirectory($newPath);
 
-        $width = $this->variants[$variant][0];
-        $height = $this->variants[$variant][1];
-        $quality = isset($this->variants[$variant][2]) ? $this->variants[$variant][2] : 90;
-        $watermark = isset($this->variants[$variant][3]) ? $this->variants[$variant][3] : false;
-        $adaptive = isset($this->variants[$variant][4]) ? $this->variants[$variant][4] : false;
+        $variantOptions = $this->variants[$variant];
 
-        usleep(mt_rand(500, 3000)); // For hostings who not allow many generates at once
+        /**
+         * @var number $width
+         * @var number $height
+         * @var number $quality
+         * @var bool $adaptive
+         * @var bool|string $watermark
+         */
+        extract($variantOptions);
+
+        usleep(mt_rand(500, 3000)); // For hosting providers who not allow many generates at once
 
         $this->generateImage($filename, $newFilename, $width, $height, $adaptive, $quality, $watermark);
         return $newFilename;
@@ -265,13 +353,13 @@ class Module extends \yii\base\Module
         if(!$m) return false;
         list($all, $pathPart, $ext) = $m;
 
-        $basename = basename($pathPart.'.'.$ext);
+        $filePath = $pathPart.'.'.$ext;
 
-        $newFilename = Yii::getAlias('@webroot').$url;
+        $newFilename = $this->getWebroot().$url;
         $fromPath = $this->getPublicToPrivatePath($newFilename);
         $fromPath = pathinfo($fromPath, PATHINFO_DIRNAME);
 
-        $filename = $fromPath.DIRECTORY_SEPARATOR.$basename;
+        $filename = $fromPath.DIRECTORY_SEPARATOR.basename($filePath);
 
         if(!file_exists($filename))
             return false;
@@ -283,5 +371,19 @@ class Module extends \yii\base\Module
 
         return $newFilename;
 
+    }
+
+    public function findOldNotAttachedFileModelsQuery()
+    {
+        return FileModel::find()
+            ->andWhere(['or', ['link_type' => null], ['link_id' => null], ['link_attribute' => null]])
+            ->andWhere(['<', 'updated_at', time()-$this->deleteNotAttachedFileModelsAfter]);
+    }
+
+    public function deleteOldNotAttachedFileModels()
+    {
+        foreach($this->findOldNotAttachedFileModelsQuery()->each() as $model) {
+            $model->delete();
+        }
     }
 }

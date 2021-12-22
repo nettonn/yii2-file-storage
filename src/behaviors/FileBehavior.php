@@ -1,17 +1,13 @@
 <?php namespace nettonn\yii2filestorage\behaviors;
 
-
-use http\Exception\InvalidArgumentException;
 use nettonn\yii2filestorage\models\FileModel;
 use nettonn\yii2filestorage\ModuleTrait;
-use phpDocumentor\Reflection\Types\Boolean;
 use yii\base\Behavior;
 use yii\base\InvalidConfigException;
-use yii\base\InvalidParamException;
-use yii\db\ActiveQuery;
+use yii\db\ActiveRecord;
 use yii\db\BaseActiveRecord;
-use yii\db\Query;
-use yii\helpers\Inflector;
+use yii\db\Expression;
+use yii\helpers\ArrayHelper;
 use yii\helpers\VarDumper;
 use yii\validators\Validator;
 
@@ -19,13 +15,46 @@ class FileBehavior extends Behavior
 {
     use ModuleTrait;
 
+    /**
+     * @var BaseActiveRecord
+     */
+    public $owner;
+
     public $attributes = [
         'images' => [
+            'attribute_id' => 'images_id',
             'multiple' => true,
             'image' => true,
             'extensions' => ['jpg', 'jpeg', 'png'], // if image is true will use from module config
         ]
     ];
+
+    protected $ownerClass;
+
+    protected $pkAttribute;
+
+    protected $attributeIds = [];
+
+    /**
+     * default:
+     *
+     * function ($owner) {
+     *     $owner->touch('updated_at');
+     * };
+     *
+     * like yii\behaviors\TimestampBehavior touch method
+     * @var string
+     */
+    public $touchCallback;
+
+    public $deleteOldNotAttachedAfterSave = true;
+
+    /**
+     * if false add validators in attached model
+     * [['images_id', 'photo_id'], 'each', 'rule' => ['integer']]
+     * @var bool
+     */
+    public $addValidatorsOnAttach = false;
 
     protected $_related = [];
 
@@ -37,10 +66,6 @@ class FileBehavior extends Behavior
     public function events()
     {
         return [
-//            BaseActiveRecord::EVENT_INIT          => 'afterFind',
-//            BaseActiveRecord::EVENT_AFTER_FIND    => 'afterFind',
-//            BaseActiveRecord::EVENT_BEFORE_INSERT => 'beforeSave',
-//            BaseActiveRecord::EVENT_BEFORE_UPDATE => 'beforeSave',
             BaseActiveRecord::EVENT_AFTER_INSERT  => 'afterSave',
             BaseActiveRecord::EVENT_AFTER_UPDATE  => 'afterSave',
             BaseActiveRecord::EVENT_BEFORE_DELETE => 'beforeDelete',
@@ -49,27 +74,50 @@ class FileBehavior extends Behavior
 
     /**
      * @param BaseActiveRecord $owner
+     * @throws InvalidConfigException
      */
     public function attach($owner)
     {
         parent::attach($owner);
 
-        if(is_array($this->owner->getPrimaryKey())) {
+        $ownerClass = get_class($this->owner);
+        if(!is_subclass_of($ownerClass, ActiveRecord::class)) {
+            throw new InvalidConfigException('Attach allowed only for children of ActiveRecord');
+        }
+
+        $primaryKey = $ownerClass::primaryKey();
+
+        if(count($primaryKey) > 1) {
             throw new InvalidConfigException('Composite primary keys not allowed');
         }
+        $this->ownerClass = $ownerClass;
+        $this->pkAttribute = current($primaryKey);
+
+        $module = self::getModule();
+
+        if(!$this->touchCallback)
+            $this->touchCallback = function ($owner) {
+                $owner->touch('updated_at');
+            };
 
         $attributes = [];
         foreach ($this->attributes as $attribute => $options) {
-            $options['multiple'] = isset($options['multiple']) ? $options['multiple'] : false;
-            $options['image'] = isset($options['image']) ? $options['image'] : true;
-            if($options['image']) {
-                $options['extensions'] = self::getModule()->imageExt;
+            $options['attribute_id'] = $options['attribute_id'] ?? $attribute.'_id';
+            $options['multiple'] = $options['multiple'] ?? false;
+            $options['is_image'] = $options['is_image'] ?? true;
+            if($options['is_image']) {
+                $options['extensions'] = $module->imageExt;
             } else {
-                $options['extensions'] = isset($options['extensions']) ? $options['extensions'] : [];
+                $options['extensions'] = $options['extensions'] ?? [];
+            }
+
+            $this->attributeIds[$options['attribute_id']] = $attribute;
+
+            if($this->addValidatorsOnAttach) {
+                $owner->getValidators()->append(Validator::createValidator('safe', $owner, $options['attribute_id']));
             }
 
             $attributes[$attribute] = $options;
-            $owner->validators[] = Validator::createValidator('safe', $owner, $attribute);
         }
         $this->attributes = $attributes;
     }
@@ -79,63 +127,85 @@ class FileBehavior extends Behavior
      */
     public function afterSave($event)
     {
+        $needTouch = false;
         foreach($this->attributes as $attribute => $options) {
-            if(isset($this->_values[$attribute])) {
-                $newIds = [];
+            if(!isset($this->_values[$attribute]))
+                continue;
 
-                if($options['multiple']) {
-                    foreach($this->_values[$attribute] as $data) {
-                        $newIds[] = $data['id'];
-                    }
-                    $currentIds = $this->getRelation($attribute)->select('id')->column();
-                } else {
-                    if(isset($this->_values[$attribute]['id'])) {
-                        $newIds[] = $this->_values[$attribute]['id'];
-                    }
+            $newIds = [];
 
-                    $currentIds = [$this->getRelation($attribute)->select('id')->scalar()];
+            if(is_array($this->_values[$attribute])) {
+                $newIds = $this->_values[$attribute];
+            } else {
+                $newIds[] = $this->_values[$attribute];
+            }
+
+            if($options['multiple']) {
+                $currentIds = $this->getRelation($attribute)->select($this->pkAttribute)->column();
+            } else {
+                if(count($newIds) >1) {
+                    $newIds = array_slice($newIds, 0, 1);
                 }
 
-                if($deleteIds = array_filter(array_diff($currentIds, $newIds))) {
-                    foreach(FileModel::find()->where(['in', 'id', $deleteIds])->all() as $model) {
-                        $model->delete();
-                    }
-                }
+                $currentIds = [$this->getRelation($attribute)->select($this->pkAttribute)->scalar()];
+            }
 
-                $extensions = $this->attributes[$attribute]['extensions'];
+            if($currentIds !== $newIds) {
+                $needTouch = true;
+            }
 
-                $sort = 1;
-                foreach($newIds as $id) {
-                    $model = FileModel::find()->where(['id' => $id])->andWhere(['in', 'ext', $extensions])->one();
-                    if($model) {
-                        $model->link_type = get_class($this->owner);
-                        $model->link_id = $this->owner->id;
-                        $model->link_attribute = $attribute;
-                        $model->sort = $sort++;
-                        if(!$model->save()) {
-                            \Yii::error('Cant save FileModel with id '.$id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
-                        }
-                    } else {
-                        \Yii::error('Cant find FileModel with id '.$id);
-                    }
-
-                }
-                unset($this->_related[$attribute]);
-                unset($this->_values[$attribute]);
-                unset($this->owner->{$attribute});
-                if($options['multiple']) {
-                    $this->owner->populateRelation($attribute, $this->getRelation($attribute)->all());
-                } else {
-                    $this->owner->populateRelation($attribute, $this->getRelation($attribute)->one());
+            if($deleteIds = array_filter(array_diff($currentIds, $newIds))) {
+                foreach(FileModel::find()->where(['in', $this->pkAttribute, $deleteIds])->all() as $model) {
+                    $model->delete();
                 }
             }
+
+            $extensions = $this->attributes[$attribute]['extensions'];
+
+            $sort = 1;
+
+            if($newIds) {
+                $idsString = implode(',', $newIds);
+                $query = FileModel::find()
+                    ->where(['in', $this->pkAttribute, $newIds])
+                    ->andWhere(['in', 'ext', $extensions])
+                    ->orderBy(new Expression("FIELD (`{$this->pkAttribute}`, $idsString)"));
+
+                foreach($query->all() as $model) {
+                    $model->link_type = $this->ownerClass;
+                    $model->link_id = $this->owner->{$this->pkAttribute};
+                    $model->link_attribute = $attribute;
+                    $model->sort = $sort++;
+                    if(!$model->save()) {
+                        \Yii::error('Cant save FileModel with id '.$model->id.' '.VarDumper::dumpAsString($model->getFirstErrors()));
+                    }
+                }
+            }
+
+            unset($this->_related[$attribute]);
+            unset($this->_values[$attribute]);
+            unset($this->owner->{$attribute});
+            if($options['multiple']) {
+                $this->owner->populateRelation($attribute, $this->getRelation($attribute)->all());
+            } else {
+                $this->owner->populateRelation($attribute, $this->getRelation($attribute)->one());
+            }
+        }
+
+        if($needTouch && is_callable($this->touchCallback)) {
+            call_user_func($this->touchCallback, $this->owner);
+        }
+
+        if($this->deleteOldNotAttachedAfterSave) {
+            $module = self::getModule();
+            $module->deleteOldNotAttachedFileModels();
         }
     }
 
     public function beforeDelete($event)
     {
         $models = FileModel::find()
-            ->where(['link_type' => get_class($this->owner), 'link_id' => $this->owner->id])
+            ->where(['link_type' => $this->ownerClass, 'link_id' => $this->owner->{$this->pkAttribute}])
             ->all();
         foreach($models as $model) {
             $model->delete();
@@ -153,10 +223,10 @@ class FileBehavior extends Behavior
             return [$this->fileGet($attribute)];
         }
 
-        $useFilenameCache = self::getModule()->useFilenameCache;
+        $useCache = self::getModule()->useModelPathCache;
         $filenames = [];
         foreach($this->owner->{$attribute} as $model) {
-            $filenames[] = $model->getFilename($useFilenameCache);
+            $filenames[] = $model->getFilename($useCache);
         }
 
         return $filenames;
@@ -170,14 +240,14 @@ class FileBehavior extends Behavior
     public function fileGet($attribute)
     {
         $model = $this->owner->{$attribute};
-        $useFilenameCache = self::getModule()->useFilenameCache;
+        $useCache = self::getModule()->useModelPathCache;
         if(!$model)
             return null;
         if(is_array($model)) {
             $first = reset($model);
-            return $first ? $first->getFilename($useFilenameCache) : null;
+            return $first ? $first->getFilename($useCache) : null;
         }
-        return $model->getFilename($useFilenameCache);
+        return $model->getFilename($useCache);
     }
 
     /**
@@ -187,6 +257,9 @@ class FileBehavior extends Behavior
     {
         $module = self::getModule();
         $result = [];
+        if(!$variants) {
+            $variants = array_keys($module->variants);
+        }
         foreach($this->filesGet($attribute) as $filename) {
             $thumbs = [];
             foreach($variants as $variant) {
@@ -200,10 +273,13 @@ class FileBehavior extends Behavior
     /**
      * return for all files [['path/to/variant1', 'path/to/variant2'], [...], ...]
      */
-    public function filesThumbGet(String $attribute, String $variant, $relative = true)
+    public function filesThumbGet(String $attribute, String $variant = null, $relative = true)
     {
         $module = self::getModule();
         $result = [];
+        if(!$variant) {
+            $variant = $module->defaultVariant;
+        }
         foreach($this->filesGet($attribute) as $filename) {
             $result[] = $module->getThumb($filename, $variant, $relative);
         }
@@ -237,14 +313,6 @@ class FileBehavior extends Behavior
         return self::getModule()->getThumb($filename, $variant, $relative);
     }
 
-    public function canGetProperty($name, $checkVars = true)
-    {
-        if(isset($this->attributes[$name])) {
-            return true;
-        }
-        return parent::canGetProperty($name, $checkVars);
-    }
-
     protected function getRelation($attribute)
     {
         if(!isset($this->attributes[$attribute]))
@@ -255,16 +323,16 @@ class FileBehavior extends Behavior
 
             if($this->attributes[$attribute]['multiple']) {
                 $this->_related[$attribute] = $this->owner
-                    ->hasMany(FileModel::class, ['link_id' => 'id'])
+                    ->hasMany(FileModel::class, ['link_id' => $this->pkAttribute])
                     ->andWhere(['link_attribute' => $attribute])
-                    ->andWhere(['link_type' => get_class($this->owner)])
+                    ->andWhere(['link_type' => $this->ownerClass])
                     ->andWhere(['in', 'ext', $extensions])
                     ->orderBy('sort ASC');
             } else {
                 $this->_related[$attribute] = $this->owner
-                    ->hasOne(FileModel::class, ['link_id' => 'id'])
+                    ->hasOne(FileModel::class, ['link_id' => $this->pkAttribute])
                     ->andWhere(['link_attribute' => $attribute])
-                    ->andWhere(['link_type' => get_class($this->owner)])
+                    ->andWhere(['link_type' => $this->ownerClass])
                     ->andWhere(['in', 'ext', $extensions])
                     ->orderBy('sort ASC');
             }
@@ -272,18 +340,34 @@ class FileBehavior extends Behavior
         return $this->_related[$attribute];
     }
 
-    public function canSetProperty($name, $checkVars = true)
+    public function canGetProperty($name, $checkVars = true)
     {
         if(isset($this->attributes[$name])) {
             return true;
         }
+
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute]))
+            return true;
+
+        return parent::canGetProperty($name, $checkVars);
+    }
+
+    public function canSetProperty($name, $checkVars = true)
+    {
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute])) {
+            return true;
+        }
+
         return parent::canSetProperty($name, $checkVars);
     }
 
     public function __set($name, $value)
     {
-        if(isset($this->attributes[$name])) {
-            $this->_values[$name] = $value;
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute])) {
+            $this->_values[$attribute] = $value;
         } else {
             parent::__set($name, $value);
         }
@@ -294,6 +378,17 @@ class FileBehavior extends Behavior
         $relation = $this->getRelation($name);
         if($relation) {
             return $relation->findFor($name, $this->owner);
+        }
+
+        $attribute = $this->attributeIds[$name] ?? false;
+        if($attribute && isset($this->attributes[$attribute])) {
+            if ($this->attributes[$attribute]['multiple']) {
+                $attributeValue = $this->owner->{$attribute};
+                return ArrayHelper::getColumn($attributeValue, 'id');
+            } else {
+                $attributeValue = $this->owner->{$attribute};
+                return $attributeValue['id'] ?? null;
+            }
         }
         return parent::__get($name);
     }
